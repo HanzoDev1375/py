@@ -1,0 +1,62 @@
+name: Simple Bootstrap Builder
+
+on:
+  workflow_dispatch:
+
+jobs:
+  bootstraps:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target_arch: [aarch64, arm, i686, x86_64]
+
+    steps:
+      - name: Install requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autopoint
+
+      - name: Clone repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Get packages from termux-packages
+        uses: actions/checkout@v4
+        with:
+          path: termux-packages
+          repository: termux/termux-packages
+          ref: 'acf1df1e90034ce0100ac54726ae56792bf56859'
+
+      - name: Setup java
+        uses: actions/setup-java@v1
+        with:
+          java-version: 17
+
+      - name: Setup environment
+        run: |
+          sudo mkdir -p /data
+          sudo chown $USER:$USER /data
+          mv *.sh termux-packages/scripts/
+          mv termux-packages/* .
+          for package in patches/*; do
+            cp -r $package packages;
+          done
+          find packages/git -type f -name "*subpackage*" -exec rm {} +
+          find packages/libxml2 -type f -name "*python*" -exec rm {} +
+          sudo mkdir -p /home/builder && mv ./* /home/builder
+
+      - name: Build bootstrap
+        working-directory: /home/builder
+        run: |
+          ./clean.sh
+          ./scripts/setup-android-sdk.sh
+          ./scripts/build-bootstraps.sh --android10 --architectures ${{ matrix.target_arch }}
+
+      - name: Upload bootstrap ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-${{ matrix.target_arch }}
+          path: "/home/builder/*.zip"
